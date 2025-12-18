@@ -7,40 +7,44 @@ import (
 	friendlytime "github.com/Starlexxx/friendly-time"
 )
 
-// ExampleParseTimeRange demonstrates parsing various time range formats
+// ExampleParseTimeRange demonstrates parsing various time range formats.
 func ExampleParseTimeRange() {
 	start, end, err := friendlytime.ParseTimeRange("2h/1h")
 	if err != nil {
 		panic(err)
 	}
+
 	fmt.Printf("Range from 2h ago to 1h ago: %d seconds\n", end-start)
 
 	start2, end2, err := friendlytime.ParseTimeRange("1416434697/")
 	if err != nil {
 		panic(err)
 	}
+
 	fmt.Printf("From timestamp to now: start=%d, end>%d\n", start2, end2)
 }
 
-// ExampleParseTimeRange_singleTime shows parsing a single time value
+// ExampleParseTimeRange_singleTime shows parsing a single time value.
 func ExampleParseTimeRange_singleTime() {
 	start, end, err := friendlytime.ParseTimeRange("1416434697")
 	if err != nil {
 		panic(err)
 	}
+
 	fmt.Printf("Single timestamp: %d (start==end: %v)\n", start, start == end)
 }
 
-// ExampleParseTimeRange_emptyRange shows behavior with empty values
+// ExampleParseTimeRange_emptyRange shows behavior with empty values.
 func ExampleParseTimeRange_emptyRange() {
 	start, end, err := friendlytime.ParseTimeRange("")
 	if err != nil {
 		panic(err)
 	}
+
 	fmt.Printf("Empty range: start=%d, end=%d\n", start, end)
 }
 
-// ExampleParseTime_durations demonstrates parsing duration strings
+// ExampleParseTime_durations demonstrates parsing duration strings.
 func ExampleParseTime_durations() {
 	now := time.Date(2025, 12, 10, 15, 30, 0, 0, time.UTC)
 
@@ -54,7 +58,7 @@ func ExampleParseTime_durations() {
 	fmt.Printf("2 days ago: %v\n", t3.Format("2006-01-02"))
 }
 
-// ExampleParseTime_timeOfDay shows parsing time of day
+// ExampleParseTime_timeOfDay shows parsing time of day.
 func ExampleParseTime_timeOfDay() {
 	now := time.Date(2025, 12, 10, 15, 30, 0, 0, time.UTC)
 
@@ -62,7 +66,7 @@ func ExampleParseTime_timeOfDay() {
 	fmt.Printf("Today at 09:30: %v\n", t.Format("2006-01-02 15:04"))
 }
 
-// ExampleParseTime_weekdays demonstrates parsing weekday references
+// ExampleParseTime_weekdays demonstrates parsing weekday references.
 func ExampleParseTime_weekdays() {
 	now := time.Date(2025, 12, 10, 15, 30, 0, 0, time.UTC)
 
@@ -70,7 +74,7 @@ func ExampleParseTime_weekdays() {
 	fmt.Printf("Last Monday: %v (weekday: %v)\n", t.Format("2006-01-02"), t.Weekday())
 }
 
-// ExampleParseTime_relativeKeywords shows relative time keywords
+// ExampleParseTime_relativeKeywords shows relative time keywords.
 func ExampleParseTime_relativeKeywords() {
 	now := time.Date(2025, 12, 10, 15, 30, 0, 0, time.UTC)
 
@@ -81,7 +85,7 @@ func ExampleParseTime_relativeKeywords() {
 	fmt.Printf("Last week: %v\n", t2.Format("2006-01-02"))
 }
 
-// ExampleParseTime_unixTimestamp demonstrates Unix timestamp parsing
+// ExampleParseTime_unixTimestamp demonstrates Unix timestamp parsing.
 func ExampleParseTime_unixTimestamp() {
 	now := time.Now()
 
@@ -92,7 +96,7 @@ func ExampleParseTime_unixTimestamp() {
 	fmt.Printf("Unix timestamp (milliseconds): %v\n", t2.UTC().Format("2006-01-02 15:04:05"))
 }
 
-// ExampleParseTime_relativeOffset shows using relative offsets from start time
+// ExampleParseTime_relativeOffset shows using relative offsets from start time.
 func ExampleParseTime_relativeOffset() {
 	now := time.Date(2025, 12, 10, 15, 30, 0, 0, time.UTC)
 	startTime := time.Date(2025, 12, 10, 12, 0, 0, 0, time.UTC)
@@ -101,7 +105,7 @@ func ExampleParseTime_relativeOffset() {
 	fmt.Printf("Start time + 1h: %v\n", t.Format("15:04"))
 }
 
-// ExampleParseTime_errorHandling demonstrates error handling
+// ExampleParseTime_errorHandling demonstrates error handling.
 func ExampleParseTime_errorHandling() {
 	now := time.Now()
 
@@ -111,7 +115,7 @@ func ExampleParseTime_errorHandling() {
 	}
 }
 
-// ExampleParseTimeRange_errorHandling shows error handling for ranges
+// ExampleParseTimeRange_errorHandling shows error handling for ranges.
 func ExampleParseTimeRange_errorHandling() {
 	// Invalid: end before start
 	_, _, err := friendlytime.ParseTimeRange("1h/2h")

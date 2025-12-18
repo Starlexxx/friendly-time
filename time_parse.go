@@ -1,3 +1,4 @@
+// Package friendlytime provides utilities for parsing human-readable time strings and ranges.
 package friendlytime
 
 import (
@@ -7,33 +8,56 @@ import (
 	"time"
 )
 
-// unitConversion defines time unit conversions to hours
+const (
+	// Time conversion constants.
+	hoursPerYear  = 8760 // 365 days * 24 hours
+	hoursPerMonth = 720  // 30 days * 24 hours
+	hoursPerDay   = 24
+
+	// Timestamp boundaries.
+	partsCountInRange          = 2
+	timestampMillisecondBorder = 9999999999 // Timestamps > this are treated as milliseconds
+	millisecondsPerSecond      = 1000
+	nanosecondsPerMillisecond  = 1000000
+)
+
+// unitConversion defines time unit conversions to hours.
 type unitConversion struct {
 	patterns []string
 	toHours  int
 }
 
-var (
-	timeUnitsToHours = []unitConversion{
-		{patterns: []string{"years", "year"}, toHours: 8760},  // 365 days
-		{patterns: []string{"months", "month"}, toHours: 720}, // 30 days
-		{patterns: []string{"days", "day"}, toHours: 24},
-	}
+// simpleUnit defines simple time unit conversions.
+type simpleUnit struct {
+	patterns []string
+	to       string
+}
 
-	simpleTimeUnits = []struct {
-		patterns []string
-		to       string
-	}{
+// getTimeUnitsToHours returns unit conversions that need to be converted to hours.
+func getTimeUnitsToHours() []unitConversion {
+	return []unitConversion{
+		{patterns: []string{"years", "year"}, toHours: hoursPerYear},
+		{patterns: []string{"months", "month"}, toHours: hoursPerMonth},
+		{patterns: []string{"days", "day"}, toHours: hoursPerDay},
+	}
+}
+
+// getSimpleTimeUnits returns simple time unit conversions.
+func getSimpleTimeUnits() []simpleUnit {
+	return []simpleUnit{
 		{patterns: []string{"seconds", "second", "sec"}, to: "s"},
 		{patterns: []string{"minutes", "minute", "min"}, to: "m"},
 		{patterns: []string{"hours", "hour"}, to: "h"},
 	}
+}
 
-	reservedKeywords = []string{
+// getReservedKeywords returns keywords that should not be converted.
+func getReservedKeywords() []string {
+	return []string{
 		"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
 		"yesterday", "last week", "last month", "last year",
 	}
-)
+}
 
 // ParseTimeRange parses human-readable time range to UNIX timestamps.
 // It returns start and end timestamps in seconds since Unix epoch.
@@ -67,35 +91,40 @@ func ParseTimeRange(timeRange string) (int64, int64, error) {
 
 	now := time.Now()
 
-	var startTime, endTime time.Time
-
-	var err error
-
-	if strings.Contains(timeRange, "/") {
-		parts := strings.Split(timeRange, "/")
-		if len(parts) != 2 {
-			return 0, 0, ErrInvalidTimeRange
-		}
-
-		startTime, err = ParseTime(parts[0], now, time.Time{})
-		if err != nil {
-			return 0, 0, fmt.Errorf("%w: %v", ErrInvalidStartTime, err)
-		}
-
-		endTime, err = ParseTime(parts[1], now, startTime)
-		if err != nil {
-			return 0, 0, fmt.Errorf("%w: %v", ErrInvalidEndTime, err)
-		}
-	} else {
-		startTime, err = ParseTime(timeRange, now, time.Time{})
-		if err != nil {
-			return 0, 0, err
-		}
-
-		endTime = startTime
+	if !strings.Contains(timeRange, "/") {
+		return parseSingleTime(timeRange, now)
 	}
 
-	// Validate that end time is not before start time
+	return parseTimeRangeParts(timeRange, now)
+}
+
+// parseSingleTime parses a single time value (no range).
+func parseSingleTime(timeRange string, now time.Time) (int64, int64, error) {
+	startTime, err := ParseTime(timeRange, now, time.Time{})
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return startTime.Unix(), startTime.Unix(), nil
+}
+
+// parseTimeRangeParts parses a time range with "/" separator.
+func parseTimeRangeParts(timeRange string, now time.Time) (int64, int64, error) {
+	parts := strings.Split(timeRange, "/")
+	if len(parts) != partsCountInRange {
+		return 0, 0, ErrInvalidTimeRange
+	}
+
+	startTime, err := ParseTime(parts[0], now, time.Time{})
+	if err != nil {
+		return 0, 0, fmt.Errorf("%w: %w", ErrInvalidStartTime, err)
+	}
+
+	endTime, err := ParseTime(parts[1], now, startTime)
+	if err != nil {
+		return 0, 0, fmt.Errorf("%w: %w", ErrInvalidEndTime, err)
+	}
+
 	if !endTime.IsZero() && !startTime.IsZero() && endTime.Before(startTime) {
 		return 0, 0, ErrEndBeforeStart
 	}
@@ -128,226 +157,320 @@ func ParseTimeRange(timeRange string) (int64, int64, error) {
 //   - "+30m" -> 30 minutes after startTime
 //
 // Returns a time.Time value or an error if the format is not recognized.
-func ParseTime(timeStr string, now time.Time, startTime time.Time) (time.Time, error) {
+func ParseTime(timeStr string, now, startTime time.Time) (time.Time, error) {
 	if timeStr == "" {
-		if startTime.IsZero() {
-			return startTime, nil
-		}
-		return now, nil
+		return handleEmptyTime(startTime, now), nil
 	}
 
 	timeStr = strings.TrimSpace(timeStr)
 
 	// Try to parse as Unix timestamp
-	if unixTime, err := strconv.ParseInt(timeStr, 10, 64); err == nil {
-		return parseUnixTimestamp(unixTime)
+	if t, ok := tryParseUnixTimestamp(timeStr); ok {
+		return t, nil
 	}
 
+	// Try relative time formats
+	if t, ok, err := tryParseRelativeFormats(timeStr, now, startTime); ok || err != nil {
+		return t, err
+	}
+
+	// Try duration and date formats
+	return tryParseDateFormats(timeStr, now)
+}
+
+// handleEmptyTime returns appropriate time for empty input.
+func handleEmptyTime(startTime, now time.Time) time.Time {
+	if startTime.IsZero() {
+		return startTime
+	}
+
+	return now
+}
+
+// tryParseUnixTimestamp attempts to parse as Unix timestamp.
+func tryParseUnixTimestamp(timeStr string) (time.Time, bool) {
+	unixTime, err := strconv.ParseInt(timeStr, 10, 64)
+	if err != nil {
+		return time.Time{}, false
+	}
+
+	t := parseUnixTimestamp(unixTime)
+
+	return t, true
+}
+
+// tryParseRelativeFormats attempts to parse relative time formats.
+func tryParseRelativeFormats(timeStr string, now, startTime time.Time) (time.Time, bool, error) {
 	lowerTimeStr := strings.ToLower(timeStr)
 
+	// Check for "last" keywords and "yesterday"
 	if strings.HasPrefix(lowerTimeStr, "last ") || strings.HasPrefix(lowerTimeStr, "yesterday") {
-		return parseRelativeTime(lowerTimeStr, now, startTime, false)
+		t, err := parseRelativeTime(lowerTimeStr, now, startTime, false)
+
+		return t, true, err
 	}
 
-	// Handle "N units ago" format - convert units first, then remove "ago"
+	// Handle "N units ago" format
 	if strings.Contains(timeStr, " ago") {
-		cleanStr := strings.Replace(timeStr, " ago", "", 1)
-		cleanStr, err := convertCustomUnits(cleanStr)
-		if err != nil {
-			return time.Time{}, fmt.Errorf("failed to convert custom units: %w", err)
-		}
+		t, err := parseAgoFormat(timeStr, now, startTime)
 
-		cleanStr = strings.Join(strings.Fields(cleanStr), "")
-
-		return parseRelativeTime(cleanStr, now, startTime, false)
+		return t, true, err
 	}
 
-	timeStr, err := convertCustomUnits(timeStr)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to convert custom units: %w", err)
+	// Handle + and - prefixes
+	if t, ok, err := tryParsePrefixedTime(timeStr, now, startTime); ok {
+		return t, true, err
 	}
 
+	return time.Time{}, false, nil
+}
+
+// parseAgoFormat handles "N units ago" format.
+func parseAgoFormat(timeStr string, now, startTime time.Time) (time.Time, error) {
+	cleanStr := strings.Replace(timeStr, " ago", "", 1)
+
+	cleanStr = convertCustomUnits(cleanStr)
+
+	cleanStr = strings.Join(strings.Fields(cleanStr), "")
+
+	return parseRelativeTime(cleanStr, now, startTime, false)
+}
+
+// tryParsePrefixedTime handles + and - prefixed times.
+func tryParsePrefixedTime(timeStr string, now, startTime time.Time) (time.Time, bool, error) {
 	if strings.HasPrefix(timeStr, "+") {
-		return parseRelativeTime(timeStr[1:], now, startTime, true)
+		converted := convertCustomUnits(timeStr[1:])
+
+		t, err := parseRelativeTime(converted, now, startTime, true)
+
+		return t, true, err
 	}
 
 	if strings.HasPrefix(timeStr, "-") {
-		return parseRelativeTime(timeStr[1:], now, startTime, false)
+		converted := convertCustomUnits(timeStr[1:])
+
+		t, err := parseRelativeTime(converted, now, startTime, false)
+
+		return t, true, err
 	}
 
-	if duration, err := time.ParseDuration(timeStr); err == nil {
+	return time.Time{}, false, nil
+}
+
+// tryParseDateFormats attempts to parse various date and time formats.
+func tryParseDateFormats(timeStr string, now time.Time) (time.Time, error) {
+	converted := convertCustomUnits(timeStr)
+
+	// Try duration
+	if duration, err := time.ParseDuration(converted); err == nil {
 		return now.Add(-duration), nil
 	}
 
-	if t, err := time.Parse("15:04", timeStr); err == nil {
-		return time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location()), nil
-	}
-
-	if t, err := time.Parse("06-01-02", timeStr); err == nil {
+	// Try time of day
+	if t, ok := tryParseTimeOfDay(converted, now); ok {
 		return t, nil
 	}
 
-	if t, err := time.Parse("2006-01-02", timeStr); err == nil {
-		return t, nil
+	// Try standard date formats
+	formats := []string{
+		"06-01-02",
+		"2006-01-02",
+		"06-01-02 15:04:05",
+		"2006-01-02 15:04:05",
+		"Mon, 02 Jan 2006 15:04:05",
 	}
 
-	if t, err := time.Parse("06-01-02 15:04:05", timeStr); err == nil {
-		return t, nil
-	}
-
-	if t, err := time.Parse("2006-01-02 15:04:05", timeStr); err == nil {
-		return t, nil
-	}
-
-	if t, err := time.Parse("Mon, 02 Jan 2006 15:04:05", timeStr); err == nil {
-		return t, nil
+	for _, format := range formats {
+		if t, err := time.Parse(format, converted); err == nil {
+			return t, nil
+		}
 	}
 
 	return time.Time{}, ErrInvalidTimeFormat
 }
 
-func convertCustomUnits(timeStr string) (string, error) {
-	// Don't convert weekday names or special keywords
-	lowerTimeStr := strings.ToLower(timeStr)
-	for _, keyword := range reservedKeywords {
-		if strings.Contains(lowerTimeStr, keyword) {
-			return timeStr, nil
-		}
+// tryParseTimeOfDay attempts to parse time of day format (HH:MM).
+func tryParseTimeOfDay(timeStr string, now time.Time) (time.Time, bool) {
+	t, err := time.Parse("15:04", timeStr)
+	if err != nil {
+		return time.Time{}, false
 	}
 
-	// Order matters: process longer patterns first to avoid partial matches
-	for _, conv := range timeUnitsToHours {
-		for _, pattern := range conv.patterns {
-			if converted, ok := tryConvertUnit(timeStr, pattern, conv.toHours); ok {
-				return converted, nil
-			}
-		}
-	}
-
-	// Handle short forms: d, y (only if not part of a longer word)
-	if result := tryConvertShortForm(timeStr, "d", 24, "day"); result != "" {
-		return result, nil
-	}
-	if result := tryConvertShortForm(timeStr, "y", 8760, "year"); result != "" {
-		return result, nil
-	}
-
-	for _, conv := range simpleTimeUnits {
-		for _, pattern := range conv.patterns {
-			if converted, ok := tryConvertSimpleUnit(timeStr, pattern, conv.to); ok {
-				return converted, nil
-			}
-		}
-	}
-
-	// If no conversion matched, return the original string
-	return timeStr, nil
+	return time.Date(
+		now.Year(),
+		now.Month(),
+		now.Day(),
+		t.Hour(),
+		t.Minute(),
+		0,
+		0,
+		now.Location(),
+	), true
 }
 
-// tryConvertUnit attempts to convert a time string with a unit pattern to hours
-func tryConvertUnit(timeStr, pattern string, toHours int) (string, bool) {
-	// Try "N pattern" format (e.g., "2 days")
-	withSpace := " " + pattern
-	if idx := strings.Index(timeStr, withSpace); idx > 0 {
-		prefix := timeStr[:idx]
+func convertCustomUnits(timeStr string) string {
+	if isReservedKeyword(timeStr) {
+		return timeStr
+	}
 
-		var amount int
-		if n, _ := fmt.Sscanf(prefix, "%d", &amount); n == 1 && amount >= 0 {
-			endIdx := idx + len(withSpace)
-			if endIdx >= len(timeStr) || !isLetter(rune(timeStr[endIdx])) {
-				hours := amount * toHours
+	if result := tryConvertToHours(timeStr); result != "" {
+		return result
+	}
 
-				suffix := ""
-				if endIdx < len(timeStr) {
-					suffix = timeStr[endIdx:]
-				}
+	if result := tryConvertShortForms(timeStr); result != "" {
+		return result
+	}
 
-				result := fmt.Sprintf("%dh%s", hours, suffix)
+	if result := tryConvertSimpleUnits(timeStr); result != "" {
+		return result
+	}
 
-				return result, true
+	return timeStr
+}
+
+// isReservedKeyword checks if the string contains reserved keywords.
+func isReservedKeyword(timeStr string) bool {
+	lowerTimeStr := strings.ToLower(timeStr)
+	for _, keyword := range getReservedKeywords() {
+		if strings.Contains(lowerTimeStr, keyword) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// tryConvertToHours converts time units to hours.
+func tryConvertToHours(timeStr string) string {
+	for _, conv := range getTimeUnitsToHours() {
+		for _, pattern := range conv.patterns {
+			if converted, ok := tryConvertUnit(timeStr, pattern, conv.toHours); ok {
+				return converted
 			}
 		}
+	}
+
+	return ""
+}
+
+// tryConvertShortForms handles short form conversions (d, y).
+func tryConvertShortForms(timeStr string) string {
+	if result := tryConvertShortForm(timeStr, "d", hoursPerDay, "day"); result != "" {
+		return result
+	}
+
+	if result := tryConvertShortForm(timeStr, "y", hoursPerYear, "year"); result != "" {
+		return result
+	}
+
+	return ""
+}
+
+// tryConvertSimpleUnits converts simple time units.
+func tryConvertSimpleUnits(timeStr string) string {
+	for _, conv := range getSimpleTimeUnits() {
+		for _, pattern := range conv.patterns {
+			if converted, ok := tryConvertSimpleUnit(timeStr, pattern, conv.to); ok {
+				return converted
+			}
+		}
+	}
+
+	return ""
+}
+
+// tryConvertUnit attempts to convert a time string with a unit pattern to hours.
+func tryConvertUnit(timeStr, pattern string, toHours int) (string, bool) {
+	// Try "N pattern" format (e.g., "2 days")
+	if result, ok := tryConvertWithPattern(timeStr, " "+pattern, toHours); ok {
+		return result, true
 	}
 
 	// Try "Npattern" format (e.g., "2days")
-	if idx := strings.Index(timeStr, pattern); idx > 0 {
-		prefix := timeStr[:idx]
-
-		var amount int
-		if n, _ := fmt.Sscanf(prefix, "%d", &amount); n == 1 && amount >= 0 {
-			endIdx := idx + len(pattern)
-			if endIdx >= len(timeStr) || !isLetter(rune(timeStr[endIdx])) {
-				hours := amount * toHours
-
-				suffix := ""
-				if endIdx < len(timeStr) {
-					suffix = timeStr[endIdx:]
-				}
-
-				result := fmt.Sprintf("%dh%s", hours, suffix)
-
-				return result, true
-			}
-		}
+	if result, ok := tryConvertWithPattern(timeStr, pattern, toHours); ok {
+		return result, true
 	}
 
 	return "", false
 }
 
-// tryConvertSimpleUnit attempts to convert a time string with a simple unit pattern
+// tryConvertWithPattern is a helper for tryConvertUnit.
+func tryConvertWithPattern(timeStr, pattern string, toHours int) (string, bool) {
+	idx := strings.Index(timeStr, pattern)
+	if idx <= 0 {
+		return "", false
+	}
+
+	prefix := timeStr[:idx]
+
+	var amount int
+	if n, _ := fmt.Sscanf(prefix, "%d", &amount); n != 1 || amount < 0 {
+		return "", false
+	}
+
+	endIdx := idx + len(pattern)
+	if endIdx < len(timeStr) && isLetter(rune(timeStr[endIdx])) {
+		return "", false
+	}
+
+	hours := amount * toHours
+
+	suffix := ""
+	if endIdx < len(timeStr) {
+		suffix = timeStr[endIdx:]
+	}
+
+	return fmt.Sprintf("%dh%s", hours, suffix), true
+}
+
+// tryConvertSimpleUnit attempts to convert a time string with a simple unit pattern.
 func tryConvertSimpleUnit(timeStr, pattern, to string) (string, bool) {
 	// Try "N pattern" format (e.g., "10 seconds")
-	// Check for word boundary after pattern (space, end of string, or non-letter)
-	withSpace := " " + pattern
-	if idx := strings.Index(timeStr, withSpace); idx > 0 {
-		// Extract the number before the pattern
-		prefix := timeStr[:idx]
-
-		var amount int
-		if n, _ := fmt.Sscanf(prefix, "%d", &amount); n == 1 && amount >= 0 {
-			endIdx := idx + len(withSpace)
-			if endIdx >= len(timeStr) || !isLetter(rune(timeStr[endIdx])) {
-				suffix := ""
-				if endIdx < len(timeStr) {
-					suffix = timeStr[endIdx:]
-				}
-
-				result := fmt.Sprintf("%d%s%s", amount, to, suffix)
-
-				return result, true
-			}
-		}
+	if result, ok := tryConvertSimpleWithPattern(timeStr, " "+pattern, to); ok {
+		return result, true
 	}
 
 	// Try "Npattern" format (e.g., "10seconds")
-	if idx := strings.Index(timeStr, pattern); idx > 0 {
-		prefix := timeStr[:idx]
-
-		var amount int
-		if n, _ := fmt.Sscanf(prefix, "%d", &amount); n == 1 && amount >= 0 {
-			endIdx := idx + len(pattern)
-			if endIdx >= len(timeStr) || !isLetter(rune(timeStr[endIdx])) {
-				suffix := ""
-				if endIdx < len(timeStr) {
-					suffix = timeStr[endIdx:]
-				}
-
-				result := fmt.Sprintf("%d%s%s", amount, to, suffix)
-
-				return result, true
-			}
-		}
+	if result, ok := tryConvertSimpleWithPattern(timeStr, pattern, to); ok {
+		return result, true
 	}
 
 	return "", false
 }
 
-// isLetter checks if a rune is a letter
+// tryConvertSimpleWithPattern is a helper for tryConvertSimpleUnit.
+func tryConvertSimpleWithPattern(timeStr, pattern, to string) (string, bool) {
+	idx := strings.Index(timeStr, pattern)
+	if idx <= 0 {
+		return "", false
+	}
+
+	prefix := timeStr[:idx]
+
+	var amount int
+	if n, _ := fmt.Sscanf(prefix, "%d", &amount); n != 1 || amount < 0 {
+		return "", false
+	}
+
+	endIdx := idx + len(pattern)
+	if endIdx < len(timeStr) && isLetter(rune(timeStr[endIdx])) {
+		return "", false
+	}
+
+	suffix := ""
+	if endIdx < len(timeStr) {
+		suffix = timeStr[endIdx:]
+	}
+
+	return fmt.Sprintf("%d%s%s", amount, to, suffix), true
+}
+
+// isLetter checks if a rune is a letter.
 func isLetter(r rune) bool {
 	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
 }
 
-// tryConvertShortForm attempts to convert short form units (d, y) to hours
+// tryConvertShortForm attempts to convert short form units (d, y) to hours.
 func tryConvertShortForm(timeStr, shortForm string, toHours int, longForm string) string {
 	if !strings.Contains(timeStr, shortForm) || strings.Contains(timeStr, longForm) {
 		return ""
@@ -374,7 +497,11 @@ func tryConvertShortForm(timeStr, shortForm string, toHours int, longForm string
 	return ""
 }
 
-func parseRelativeTime(durationStr string, now, startTime time.Time, isPositive bool) (time.Time, error) {
+func parseRelativeTime(
+	durationStr string,
+	now, startTime time.Time,
+	isPositive bool,
+) (time.Time, error) {
 	durationStr = strings.ToLower(strings.TrimSpace(durationStr))
 	switch durationStr {
 	case "yesterday":
@@ -411,7 +538,7 @@ func parseRelativeTime(durationStr string, now, startTime time.Time, isPositive 
 	}
 }
 
-// getMidnight returns the time at midnight (00:00:00) for the given date
+// getMidnight returns the time at midnight (00:00:00) for the given date.
 func getMidnight(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
@@ -435,20 +562,20 @@ func parseLastWeekday(durationStr string, now time.Time) (time.Time, error) {
 	return getMidnight(lastWeekday), nil
 }
 
-// parseUnixTimestamp parses a Unix timestamp, handling both seconds and milliseconds
-func parseUnixTimestamp(unixTime int64) (time.Time, error) {
+// parseUnixTimestamp parses a Unix timestamp, handling both seconds and milliseconds.
+func parseUnixTimestamp(unixTime int64) time.Time {
 	// Detect if it's milliseconds (13 digits or more) vs seconds (10 digits or less)
 	// Timestamps > 9999999999 are either after year 2286 in seconds, or milliseconds
-	if unixTime > 9999999999 {
+	if unixTime > timestampMillisecondBorder {
 		// Treat as milliseconds
-		sec := unixTime / 1000
-		nsec := (unixTime % 1000) * 1000000
+		sec := unixTime / millisecondsPerSecond
+		nsec := (unixTime % millisecondsPerSecond) * nanosecondsPerMillisecond
 
-		return time.Unix(sec, nsec), nil
+		return time.Unix(sec, nsec)
 	}
 
 	// Treat as seconds (including negative timestamps for dates before 1970)
-	return time.Unix(unixTime, 0), nil
+	return time.Unix(unixTime, 0)
 }
 
 func parseWeekday(weekdayStr string) (time.Weekday, error) {
