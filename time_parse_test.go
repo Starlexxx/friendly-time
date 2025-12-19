@@ -9,13 +9,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Helper function to create a fixed time for testing
+// Helper function to create a fixed time for testing.
 func fixedTime() time.Time {
 	// Wednesday, December 10, 2025, 15:30:45
 	return time.Date(2025, 12, 10, 15, 30, 45, 0, time.UTC)
 }
 
-// Helper function to create midnight for a given date
+// Helper function to create midnight for a given date.
 func midnight(year int, month time.Month, day int) time.Time {
 	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 }
@@ -192,7 +192,14 @@ func TestParseTime_RelativeKeywords(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := ParseTime(tt.input, now, time.Time{})
 			require.NoError(t, err)
-			assert.Equal(t, tt.expected.Unix(), result.Unix(), "Expected %v, got %v", tt.expected, result)
+			assert.Equal(
+				t,
+				tt.expected.Unix(),
+				result.Unix(),
+				"Expected %v, got %v",
+				tt.expected,
+				result,
+			)
 		})
 	}
 }
@@ -247,7 +254,14 @@ func TestParseTime_Weekdays(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := ParseTime(tt.input, now, time.Time{})
 			require.NoError(t, err)
-			assert.Equal(t, tt.expected.Unix(), result.Unix(), "Expected %v, got %v", tt.expected, result)
+			assert.Equal(
+				t,
+				tt.expected.Unix(),
+				result.Unix(),
+				"Expected %v, got %v",
+				tt.expected,
+				result,
+			)
 		})
 	}
 }
@@ -537,7 +551,13 @@ func TestParseTimeRange_Ranges(t *testing.T) {
 
 			// Basic sanity checks
 			if tt.input != "/1416434697" { // Skip validation for ranges starting from zero
-				assert.LessOrEqual(t, start, end, "Start should be before or equal to end: %s", tt.description)
+				assert.LessOrEqual(
+					t,
+					start,
+					end,
+					"Start should be before or equal to end: %s",
+					tt.description,
+				)
 			}
 		})
 	}
@@ -590,8 +610,15 @@ func TestParseTimeRange_ComplexScenarios(t *testing.T) {
 			_, _, err := ParseTimeRange(tt.input)
 			if tt.wantErr {
 				require.Error(t, err)
+
 				if tt.errType != nil {
-					assert.True(t, errors.Is(err, tt.errType), "Expected error type %v, got %v", tt.errType, err)
+					assert.True(
+						t,
+						errors.Is(err, tt.errType),
+						"Expected error type %v, got %v",
+						tt.errType,
+						err,
+					)
 				}
 			} else {
 				require.NoError(t, err)
@@ -656,8 +683,7 @@ func TestConvertCustomUnits(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := convertCustomUnits(tt.input)
-			require.NoError(t, err)
+			result := convertCustomUnits(tt.input)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -725,13 +751,14 @@ func TestParseWeekday(t *testing.T) {
 	}
 }
 
-// Edge cases and regression tests
+// Edge cases and regression tests.
 func TestParseTime_EdgeCases(t *testing.T) {
 	now := fixedTime()
 
 	t.Run("very large duration", func(t *testing.T) {
 		result, err := ParseTime("1000h", now, time.Time{})
 		require.NoError(t, err)
+
 		expected := now.Add(-1000 * time.Hour)
 		assert.Equal(t, expected.Unix(), result.Unix())
 	})
@@ -745,6 +772,7 @@ func TestParseTime_EdgeCases(t *testing.T) {
 	t.Run("multiple spaces in 'ago' format", func(t *testing.T) {
 		result, err := ParseTime("5  minutes  ago", now, time.Time{})
 		require.NoError(t, err)
+
 		expected := now.Add(-5 * time.Minute)
 		assert.Equal(t, expected.Unix(), result.Unix())
 	})
@@ -768,7 +796,7 @@ func TestParseTimeRange_EdgeCases(t *testing.T) {
 	})
 }
 
-// Test thread safety (if library is used concurrently)
+// Test thread safety (if library is used concurrently).
 func TestParseTime_Concurrent(t *testing.T) {
 	now := fixedTime()
 
@@ -780,6 +808,7 @@ func TestParseTime_Concurrent(t *testing.T) {
 				_, err := ParseTime("1h", now, time.Time{})
 				assert.NoError(t, err)
 			}
+
 			done <- true
 		}()
 	}
@@ -789,7 +818,7 @@ func TestParseTime_Concurrent(t *testing.T) {
 	}
 }
 
-// Test formats without spaces
+// Test formats without spaces.
 func TestParseTime_NoSpaceFormats(t *testing.T) {
 	now := fixedTime()
 
@@ -839,7 +868,7 @@ func TestParseTime_NoSpaceFormats(t *testing.T) {
 	}
 }
 
-// Test millisecond timestamps
+// Test millisecond timestamps.
 func TestParseTime_MillisecondTimestamps(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -876,7 +905,7 @@ func TestParseTime_MillisecondTimestamps(t *testing.T) {
 	}
 }
 
-// Test timezone handling
+// Test timezone handling.
 func TestParseTime_Timezones(t *testing.T) {
 	utc := time.Date(2025, 12, 10, 15, 30, 45, 0, time.UTC)
 	est := time.Date(2025, 12, 10, 15, 30, 45, 0, time.FixedZone("EST", -5*3600))
@@ -919,7 +948,7 @@ func TestParseTime_Timezones(t *testing.T) {
 	}
 }
 
-// Test boundary values
+// Test boundary values.
 func TestParseTime_BoundaryValues(t *testing.T) {
 	now := fixedTime()
 
@@ -967,7 +996,7 @@ func TestParseTime_BoundaryValues(t *testing.T) {
 	}
 }
 
-// Test case sensitivity
+// Test case sensitivity.
 func TestParseTime_CaseSensitivity(t *testing.T) {
 	now := fixedTime()
 
@@ -991,7 +1020,7 @@ func TestParseTime_CaseSensitivity(t *testing.T) {
 	}
 }
 
-// Test multiple spaces and whitespace variations
+// Test multiple spaces and whitespace variations.
 func TestParseTime_WhitespaceVariations(t *testing.T) {
 	now := fixedTime()
 
@@ -1026,7 +1055,7 @@ func TestParseTime_WhitespaceVariations(t *testing.T) {
 	}
 }
 
-// Test all weekdays systematically
+// Test all weekdays systematically.
 func TestParseTime_AllWeekdaysSystematic(t *testing.T) {
 	testDates := []struct {
 		name string
@@ -1041,7 +1070,15 @@ func TestParseTime_AllWeekdaysSystematic(t *testing.T) {
 		{"From Saturday", time.Date(2025, 12, 13, 15, 30, 45, 0, time.UTC)},  // Saturday
 	}
 
-	weekdays := []string{"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}
+	weekdays := []string{
+		"sunday",
+		"monday",
+		"tuesday",
+		"wednesday",
+		"thursday",
+		"friday",
+		"saturday",
+	}
 
 	for _, td := range testDates {
 		t.Run(td.name, func(t *testing.T) {
@@ -1059,7 +1096,7 @@ func TestParseTime_AllWeekdaysSystematic(t *testing.T) {
 	}
 }
 
-// Test ParseTimeRange with all edge cases
+// Test ParseTimeRange with all edge cases.
 func TestParseTimeRange_MoreEdgeCases(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -1118,8 +1155,15 @@ func TestParseTimeRange_MoreEdgeCases(t *testing.T) {
 			start, end, err := ParseTimeRange(tt.input)
 			if tt.wantErr {
 				require.Error(t, err, tt.description)
+
 				if tt.errType != nil {
-					assert.True(t, errors.Is(err, tt.errType), "Expected error type %v, got %v", tt.errType, err)
+					assert.True(
+						t,
+						errors.Is(err, tt.errType),
+						"Expected error type %v, got %v",
+						tt.errType,
+						err,
+					)
 				}
 			} else {
 				require.NoError(t, err, tt.description)
@@ -1129,7 +1173,7 @@ func TestParseTimeRange_MoreEdgeCases(t *testing.T) {
 	}
 }
 
-// Test date parsing edge cases
+// Test date parsing edge cases.
 func TestParseTime_DateEdgeCases(t *testing.T) {
 	tests := []struct {
 		name    string
